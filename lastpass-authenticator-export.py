@@ -18,8 +18,8 @@ VERIFY = True
 USER_AGENT = 'lastpass-python/{}'.format('0.3.2')
 CLIENT_ID = 'LastPassAuthExport'
 
-def iterations(username):
 
+def iterations(username):
     url = 'https://lastpass.com/iterations.php'
     params = {
         'email': username
@@ -29,24 +29,23 @@ def iterations(username):
     }
 
     r = requests.get(
-        url = url,
-        params = params,
-        verify = VERIFY,
-        headers = headers
+        url=url,
+        params=params,
+        verify=VERIFY,
+        headers=headers
     )
 
     try:
         iterations = int(r.text)
     except ValueError:
         iterations = 5000
-        
+
     return iterations
 
 
 def create_hash(username, password, iteration_count):
-    
     key = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), username.encode('utf-8'), iteration_count, 32)
-    
+
     login_hash = binascii.hexlify(
         hashlib.pbkdf2_hmac('sha256', key, password.encode('utf-8'), 1, 32)
     )
@@ -55,7 +54,6 @@ def create_hash(username, password, iteration_count):
 
 
 def login(username, password, otp=None):
-
     session = requests.Session()
     session.headers = {'user-agent': USER_AGENT}
     url = 'https://lastpass.com/login.php'
@@ -76,9 +74,9 @@ def login(username, password, otp=None):
         data.update({'otp': otp})
 
     r = session.post(
-        url = url,
-        data = data,
-        verify = VERIFY
+        url=url,
+        data=data,
+        verify=VERIFY
     )
 
     if not r.text.startswith('<ok'):
@@ -87,12 +85,14 @@ def login(username, password, otp=None):
         exit(1)
     else:
         csrf = session.post('https://lastpass.com/getCSRFToken.php', verify=VERIFY).text
-        return r.cookies.get_dict()['PHPSESSID'], csrf, key
-
+        # return r.cookies.get_dict()['PHPSESSID'], csrf, key
+        a = r.cookies.get_dict()['PHPSESSID']
+        b = csrf
+        c = key
+        return a, b, c
 
 
 def get_mfa_backup(session, csrf):
-
     url = 'https://lastpass.com/lmiapi/authenticator/backup'
 
     headers = {
@@ -102,16 +102,15 @@ def get_mfa_backup(session, csrf):
     }
 
     r = requests.get(
-        url = url,
-        headers = headers,
-        verify = VERIFY
+        url=url,
+        headers=headers,
+        verify=VERIFY
     )
 
     return r.json()['userData']
 
 
 def decrypt_user_data(user_data, key):
-
     data_parts = user_data.split('|')
     iv = base64.b64decode(data_parts[0].split('!')[1])
     ciphertext = base64.b64decode(data_parts[1])
@@ -122,12 +121,11 @@ def decrypt_user_data(user_data, key):
         AES.block_size
     )
     mfa_data = json.loads(plaintext)
-    
+
     return mfa_data
 
 
 def write_out(mfa_data):
-
     if not os.path.isdir('export'):
         os.makedirs('export')
 
@@ -158,13 +156,12 @@ def write_out(mfa_data):
       </tr>
 """
 
-
     for account in mfa_data['accounts']:
         totp = pyotp.TOTP(account['secret'].replace(' ', ''))
 
         uri = totp.provisioning_uri(
-            name = account['userName'],
-            issuer_name = account['issuerName']
+            name=account['userName'],
+            issuer_name=account['issuerName']
         )
 
         img = qrcode.make(uri)
@@ -196,13 +193,20 @@ def get_args():
 
 
 def main():
+    with open(os.path.join(os.path.dirname(__file__), 'credentials.json')) as f:
+        credentials = json.load(f)
+        username = credentials['username']
+        password = credentials['password']
 
+    '''
     args = get_args()
     username = args.username
     otp = args.otp
     password = getpass.getpass()
-
     session, csrf, key = login(username, password, otp)
+    '''
+
+    session, csrf, key = login(username, password)
     user_data = get_mfa_backup(session, csrf)
     mfa_data = decrypt_user_data(user_data, key)
     write_out(mfa_data)
